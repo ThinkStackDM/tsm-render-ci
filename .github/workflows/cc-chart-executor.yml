@@ -1,0 +1,229 @@
+name: cc-chart-executor
+
+# Authoritative hosted execution surface for the Cashflow Compass chart-and-narrate
+# render verification (TSM-54 / child TSM-2375). Runs the SAME proven container lane
+# as hosted-render / cfc-v3-audio (ghcr.io/thinkstackdm/thiaaaa-render: Node 22 +
+# headless Chromium + ffmpeg + WhisperX + OpenVoice v2), and uploads ONE durable
+# artifact containing the full TSM-54-render tree:
+#
+#   charts/      18 chart-capture metrics.json (3 archetypes x 2 engines x 3 runs) + winner.yaml
+#   samples/     3 Cashflow Compass sample MP4s + proof frames + 3-chart sequence + sync-evidence.json
+#   audio-sync/  openvoice_clip.wav + whisperx_manifest.json (OpenVoice v2 + WhisperX forced alignment)
+#
+# Two jobs by design: the 18-capture bake-off is chrome-heavy and leaves the shared
+# runner under memory pressure, which was stalling the subsequent sample capture's
+# first CDP/setContent past any timeout. Running the gate-checked sample render +
+# audio-sync in a SECOND, FRESH container (job `sample-audio`, which downloads the
+# bake-off's charts/) gives that lighter chrome workload a clean environment.
+#
+# The sample render path does NOT bypass the six composer-side gates
+# (@thiaaaa/chart-and-narrate compose()): render-sample.ts hard-stops on any violation.
+# After the audio lane runs, finalize-sync-evidence.py un-defers the audioNarrationSync
+# block in sync-evidence.json with the real WhisperX confidence numbers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      duration_ms:
+        description: "Per-capture animation window (ms)"
+        required: false
+        default: "4000"
+      narration_script:
+        description: "Narration text synthesized (OpenVoice v2) + force-aligned (WhisperX)"
+        required: false
+        default: >-
+          Cashflow Compass. Three numbers move your retirement: the ten year
+          Treasury yield, your contribution limit, and your equity risk premium.
+          We chart each one, cite the source, and show the one quiet mistake that
+          drains the account over time.
+  push:
+    paths:
+      - "packages/chart-bakeoff/**"
+      - "packages/chart-and-narrate/**"
+      - "work-products/TSM-54-layer-b/**"
+      - ".github/workflows/cc-chart-executor.yml"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: 18-capture chart bake-off (chrome-heavy). Produces charts/ + winner.yaml.
+  # ---------------------------------------------------------------------------
+  bakeoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/thinkstackdm/thiaaaa-render:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --shm-size=2g --user root
+    env:
+      OUT_ROOT: ${{ github.workspace }}/work-products/TSM-54-render
+      PUPPETEER_CACHE_DIR: /opt/pptr-cache
+      OMP_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "4"
+      CC_SAMPLE_CAPTURE_TIMEOUT_MS: "60000"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install a modern static ffmpeg (chart mux needs ffmpeg >= 6 -fps_mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp
+          curl -fsSL -o ffmpeg.tar.xz \
+            https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          mkdir -p /opt/ffmpeg-static && tar -xJf ffmpeg.tar.xz -C /opt/ffmpeg-static --strip-components=1
+          echo "FFMPEG_PATH=/opt/ffmpeg-static/bin/ffmpeg" >> "$GITHUB_ENV"
+          /opt/ffmpeg-static/bin/ffmpeg -version | head -1
+
+      - name: Install chart-bakeoff deps + build runtime
+        working-directory: packages/chart-bakeoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci || npm install --no-audit --no-fund
+          npm run build:runtime
+          echo "puppeteer chrome:"; node -e "console.log(require('puppeteer').executablePath())"
+
+      - name: Run 18-capture chart bake-off (real headless Chromium)
+        working-directory: packages/chart-bakeoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --import tsx src/cli.ts --real \
+            --out "$OUT_ROOT/charts" \
+            --duration-ms "${{ github.event.inputs.duration_ms || '4000' }}"
+          echo "== winner =="; grep -E 'decision:|capturesFound:|capturesExpected:' "$OUT_ROOT/charts/winner.yaml"
+          n=$(find "$OUT_ROOT/charts" -name metrics.json | wc -l); echo "metrics.json count: $n"; [ "$n" -eq 18 ]
+
+      - name: Upload charts (bake-off hand-off)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsm54-charts-${{ github.run_id }}
+          path: work-products/TSM-54-render/charts/
+          if-no-files-found: error
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Job 2: gate-checked 3-chart sample render + OpenVoice/WhisperX audio-sync, in a
+  # FRESH container. Downloads charts/ from job 1 and uploads the full render tree.
+  # ---------------------------------------------------------------------------
+  sample-audio:
+    needs: bakeoff
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/thinkstackdm/thiaaaa-render:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --shm-size=2g --user root
+    env:
+      OUT_ROOT: ${{ github.workspace }}/work-products/TSM-54-render
+      PUPPETEER_CACHE_DIR: /opt/pptr-cache
+      OMP_NUM_THREADS: "4"
+      OPENBLAS_NUM_THREADS: "4"
+      CC_SAMPLE_CAPTURE_TIMEOUT_MS: "120000"
+      # Surface page-side console/pageerror/requestfailed during the sample
+      # capture so a renderer-side stall (e.g. Recharts ResponsiveContainer
+      # re-measure loop) is visible in the run log, not silent. (TSM-2609)
+      CC_SAMPLE_CAPTURE_TRACE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install a modern static ffmpeg
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp
+          curl -fsSL -o ffmpeg.tar.xz \
+            https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          mkdir -p /opt/ffmpeg-static && tar -xJf ffmpeg.tar.xz -C /opt/ffmpeg-static --strip-components=1
+          echo "FFMPEG_PATH=/opt/ffmpeg-static/bin/ffmpeg" >> "$GITHUB_ENV"
+          /opt/ffmpeg-static/bin/ffmpeg -version | head -1
+
+      - name: Install chart-bakeoff deps + build runtime
+        working-directory: packages/chart-bakeoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci || npm install --no-audit --no-fund
+          npm run build:runtime
+
+      - name: Download bake-off charts
+        uses: actions/download-artifact@v4
+        with:
+          name: tsm54-charts-${{ github.run_id }}
+          path: work-products/TSM-54-render/charts
+
+      - name: Render 3-chart Cashflow Compass sample (gate-checked, fresh container)
+        working-directory: packages/chart-bakeoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$OUT_ROOT/charts/winner.yaml"
+          node --import tsx scripts/render-sample.ts \
+            --plan ../../work-products/TSM-54-layer-b/render-plan.json \
+            --winner "$OUT_ROOT/charts/winner.yaml" \
+            --out "$OUT_ROOT/samples" \
+            --engine recharts \
+            --duration-ms "${{ github.event.inputs.duration_ms || '4000' }}" \
+            --capture-timeout-ms "${CC_SAMPLE_CAPTURE_TIMEOUT_MS:-120000}"
+          # Proof frame for each sample (first keyframe of the captured render).
+          for d in "$OUT_ROOT"/samples/*/; do
+            [ -f "$d/capture.mp4" ] || continue
+            "$FFMPEG_PATH" -y -loglevel error -i "$d/capture.mp4" -frames:v 1 "$d/proof-frame.png"
+          done
+          ls -R "$OUT_ROOT/samples"
+
+      - name: OpenVoice v2 + WhisperX narration-sync evidence
+        shell: bash
+        env:
+          SMOKE_OUT: ${{ github.workspace }}/work-products/TSM-54-render/audio-sync
+          RUNNER_SCRIPT_TEXT: ${{ github.event.inputs.narration_script }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$SMOKE_OUT"
+          PY="/opt/venv/bin/python"; [ -x "$PY" ] || PY="$(command -v python3)"
+          PYTHONUNBUFFERED=1 "$PY" infra/runner/smoke/tts.py "$SMOKE_OUT"
+          PYTHONUNBUFFERED=1 "$PY" infra/runner/smoke/whisperx_manifest.py \
+            "$SMOKE_OUT/openvoice_clip.wav" "$SMOKE_OUT/whisperx_manifest.json"
+
+      - name: Finalize sync-evidence (un-defer audioNarrationSync)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PY="/opt/venv/bin/python"; [ -x "$PY" ] || PY="$(command -v python3)"
+          "$PY" infra/runner/smoke/finalize-sync-evidence.py \
+            "$OUT_ROOT/samples/sync-evidence.json" \
+            "$OUT_ROOT/audio-sync/whisperx_manifest.json" \
+            "$OUT_ROOT/audio-sync/openvoice_clip.wav"
+          echo "== audioNarrationSync block =="
+          "$PY" -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))['audioNarrationSync'], indent=2))" \
+            "$OUT_ROOT/samples/sync-evidence.json"
+
+      - name: Verify acceptance artifacts exist
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "$OUT_ROOT/charts/winner.yaml"
+          n=$(find "$OUT_ROOT/charts" -name metrics.json | wc -l); echo "metrics.json count: $n"; [ "$n" -eq 18 ]
+          test -s "$OUT_ROOT/samples/cashflow-compass-3chart-sequence.mp4"
+          test -s "$OUT_ROOT/samples/sync-evidence.json"
+          test -s "$OUT_ROOT/audio-sync/openvoice_clip.wav"
+          test -s "$OUT_ROOT/audio-sync/whisperx_manifest.json"
+          echo "ALL TSM-54 ARTIFACTS PRESENT"
+          echo "== tree =="; find "$OUT_ROOT" -maxdepth 2 | sort
+
+      - name: Upload TSM-54 render artifacts (full tree)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tsm-54-render-${{ github.run_id }}
+          path: work-products/TSM-54-render/
+          if-no-files-found: warn
+          retention-days: 30

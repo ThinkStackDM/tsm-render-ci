@@ -1,0 +1,41 @@
+# === Secrets / credentials — NEVER commit ===
+.env
+.env.*
+*.pem
+*.key
+*.p8
+credentials*
+*secret*
+*token*
+*.auth.json
+oci_api_key*
+
+# === Oracle / self-hosted runner material (lives in the PRIVATE repo only) ===
+*a1-hunt*
+ORACLE-*
+register.sh
+start-runner.sh
+setup.sh
+labels.json
+
+# === Content in/out — render inputs and outputs stay OUT of the public repo ===
+_render_out/
+assets/
+work-products/
+out/
+*.mp4
+*.mov
+*.wav
+*.mp3
+*.srt
+
+# === Build / deps / local ===
+node_modules/
+__pycache__/
+*.pyc
+dist/
+build/
+*.tsbuildinfo
+*.log
+.DS_Store
+.claude/

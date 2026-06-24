@@ -1,0 +1,46 @@
+{
+  "name": "@thiaaaa/chart-bakeoff",
+  "version": "0.1.0",
+  "description": "Chart-engine bake-off harness for the Cashflow Compass compound primitive (THIAAAAA-34 §2.3/§2.4): the §2.3 CLI invocation contract, the per-capture metrics.json schema, and the §2.4 winner-decision rule (Recharts-default, single winner across all three archetypes). Running the 18 captures is runner-gated and lives in the render child (THIAAAAA-54); this package is the harness CODE only.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "chart-bakeoff": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:runtime": "node scripts/build-runtime.mjs",
+    "capture": "node --import tsx src/cli.ts --real",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.22.3",
+    "typescript": "^5.6.3"
+  },
+  "private": true,
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "esbuild": "^0.28.1",
+    "puppeteer": "^23.11.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^3.8.1"
+  }
+}

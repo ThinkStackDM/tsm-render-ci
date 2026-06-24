@@ -1,0 +1,71 @@
+name: cfc-v3-audio
+
+# Generates per-beat TTS WAVs for Cashflow Compass video #3 (TSM-1676).
+# Beats 2-8: OpenVoice v2 (MIT) via the thiaaaa-render container.
+# Beats 1, 9: Piper en_US-ryan-high (CC-BY-4.0), installed at runtime.
+# Outputs: beat-1.wav .. beat-9.wav uploaded as artifact cfc-v3-audio-<run_id>.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/thinkstackdm/thiaaaa-render:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --shm-size=2g --user root
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Piper en_US-ryan-high
+        shell: bash
+        run: |
+          set -euo pipefail
+          PIPER_VER="2023.11.14-2"
+          cd /tmp
+          curl -fsSL \
+            "https://github.com/rhasspy/piper/releases/download/${PIPER_VER}/piper_linux_x86_64.tar.gz" \
+            | tar xz
+          mv piper /opt/piper-bin
+          mkdir -p /opt/piper
+          BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/high"
+          curl -fsSL "${BASE}/en_US-ryan-high.onnx"      -o /opt/piper/en_US-ryan-high.onnx
+          curl -fsSL "${BASE}/en_US-ryan-high.onnx.json" -o /opt/piper/en_US-ryan-high.onnx.json
+          echo "piper $(/opt/piper-bin/piper --version 2>&1 || true) installed"
+
+      - name: Generate per-beat WAVs
+        shell: bash
+        env:
+          OPENVOICE_HOME: /opt/openvoice
+          PIPER_BIN: /opt/piper-bin/piper
+          PIPER_MODEL: /opt/piper/en_US-ryan-high.onnx
+          OMP_NUM_THREADS: "4"
+          OPENBLAS_NUM_THREADS: "4"
+        run: |
+          set -euo pipefail
+          source /opt/venv/bin/activate
+          # Relative path so the upload-artifact action (which resolves
+          # github.workspace to the container mount /__w/...) and this shell
+          # step agree on the location. Absolute github.workspace paths diverge
+          # between the docker-exec shell and the action — that broke run
+          # 27908635637 (WAVs written, "No files were found" on upload).
+          python infra/runner/audio/generate-beats.py _audio_out
+          echo "--- generated files ---"
+          ls -lh _audio_out/
+
+      - name: Upload beat WAVs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfc-v3-audio-${{ github.run_id }}
+          path: _audio_out/
+          if-no-files-found: error
+          retention-days: 14

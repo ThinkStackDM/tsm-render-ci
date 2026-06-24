@@ -1,0 +1,81 @@
+name: hosted-render
+
+on:
+  workflow_dispatch:
+    inputs:
+      title:
+        description: Overlay title shown in the captured motion plate
+        required: true
+        default: Cashflow Compass V1
+      subtitle:
+        description: Short overlay subtitle for the capture plate
+        required: false
+        default: Locked script render verification
+      script:
+        description: Locked narration script to synthesize and align
+        required: true
+        type: string
+      artifact_name:
+        description: Artifact bundle name
+        required: true
+        default: hosted-render
+  workflow_call:
+    inputs:
+      title:
+        required: true
+        type: string
+      subtitle:
+        required: false
+        type: string
+        default: Locked script render verification
+      script:
+        required: true
+        type: string
+      artifact_name:
+        required: false
+        type: string
+        default: hosted-render
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: ghcr.io/thinkstackdm/thiaaaa-render:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --shm-size=2g --user root
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hosted render (capture + OpenVoice v2 + WhisperX + MP4)
+        shell: bash
+        env:
+          DISPLAY: ":99"
+          VENV: /opt/venv
+          OPENVOICE_HOME: /opt/openvoice
+          PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
+          SMOKE_OUT: ${{ github.workspace }}/_render_out
+          RUNNER_SCRIPT_TEXT: ${{ inputs.script }}
+          CAPTURE_TITLE: ${{ inputs.title }}
+          CAPTURE_SUBTITLE: ${{ inputs.subtitle }}
+          OMP_NUM_THREADS: "4"
+          OPENBLAS_NUM_THREADS: "4"
+        run: |
+          set -euo pipefail
+          Xvfb :99 -screen 0 1920x1080x24 >/tmp/xvfb.log 2>&1 &
+          for i in $(seq 1 15); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 1; done
+          chmod +x infra/runner/smoke/*.sh
+          infra/runner/smoke/run-smoke.sh
+      - name: Upload render artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-${{ github.run_id }}
+          path: _render_out/
+          if-no-files-found: warn
+          retention-days: 7

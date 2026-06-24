@@ -1,0 +1,108 @@
+name: runner
+
+# Builds the THIAAAAA shared render image, publishes it to GHCR, and proves it green
+# by running the FULL Linux smoke (real Xvfb+Chromium capture, OpenVoice v2 clip,
+# WhisperX word alignment) inside that image on a free GitHub-hosted runner.
+#
+# This replaces the earlier macOS-reduced placeholder smoke (sine-tone TTS / ffprobe
+# "whisperx"): that proved nothing about the ML stack. Here the gate runs the actual
+# stack, at $0, with no self-hosted host required — which also unblocks consumers
+# (Cashflow Compass TSM-1654, Stack Lab, Vault Cases) without minting a runner token.
+#
+# The published image (linux/amd64) is what the GitHub-hosted gate runs. The persistent
+# self-hosted runner (Oracle Always-Free A1, linux/arm64) builds the SAME Dockerfile
+# natively — see infra/runner/ORACLE-A1-SETUP.md. We deliberately do NOT QEMU-cross-build
+# arm64 in CI (an ML image under emulation is impractically slow); each arch is built
+# natively where it runs.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "infra/runner/**"
+      - ".github/workflows/runner-smoke.yml"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/thinkstackdm/thiaaaa-render
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space for the large ML image build
+        run: |
+          # The image (torch + OpenVoice + WhisperX + Chromium) is ~10GB; the runner only
+          # has ~14GB free. Reclaim the preinstalled toolchains we don't use so the build
+          # and cache export don't exhaust the disk.
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup \
+                      /usr/local/lib/android "${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}" || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h /
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: infra/runner
+          file: infra/runner/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          # mode=min (final layers only) + ignore-error: mode=max blew past the 10GB gha
+          # cache limit / runner disk on this ~10GB image and killed the build silently.
+          cache-to: type=gha,mode=min,ignore-error=true
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      image: ghcr.io/thinkstackdm/thiaaaa-render:${{ github.sha }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      # root: the image's non-root `runner` user can't write GitHub's /__w/_temp mount
+      # (uid mismatch) → checkout EACCES. Safe here — open-page.mjs launches Chromium
+      # with --no-sandbox. --shm-size avoids Chromium crashes under load.
+      options: --shm-size=2g --user root
+    steps:
+      - uses: actions/checkout@v4
+      - name: Full render smoke (capture + OpenVoice v2 + WhisperX)
+        shell: bash
+        env:
+          DISPLAY: ":99"
+          VENV: /opt/venv
+          OPENVOICE_HOME: /opt/openvoice
+          PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
+          SMOKE_OUT: ${{ github.workspace }}/_smoke_out
+          # Use all cores for torch / CTranslate2 (WhisperX) — GitHub-hosted gives 4.
+          OMP_NUM_THREADS: "4"
+          OPENBLAS_NUM_THREADS: "4"
+        run: |
+          set -euo pipefail
+          # The container entrypoint (start-runner.sh) is overridden by Actions, so we
+          # start the virtual display ourselves before the capture step.
+          Xvfb :99 -screen 0 1920x1080x24 >/tmp/xvfb.log 2>&1 &
+          for i in $(seq 1 15); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 1; done
+          chmod +x infra/runner/smoke/*.sh
+          infra/runner/smoke/run-smoke.sh
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runner-smoke-${{ github.run_id }}
+          path: _smoke_out/
+          if-no-files-found: warn
+          retention-days: 7

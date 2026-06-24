@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "policyVersion": "v1",
+  "policyRevisionId": "917f6883-182e-4687-a030-fb1996a664d2",
+  "channelBriefRevisionId": "",
+  "violations": [],
+  "meta": {
+    "scriptId": "cc-v1-jargon-stress-SAMPLE",
+    "scriptHash": "b0335c04f495028cb4933d3e234e7daa021866e4c3dcd1a91457669a01a0f963",
+    "linterVersion": "1.0.0",
+    "generatedAt": "2026-05-28T07:54:09.357Z"
+  }
+}

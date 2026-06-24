@@ -1,0 +1,47 @@
+[
+  {
+    "n": 1,
+    "engine": "piper",
+    "vo": "Same money in. Same gross return. One fund charges 0.04%. Another fee scenario charges 0.75%. Over thirty years, in this model, the gap is about one hundred and two thousand dollars. Not because the fee looks big. Because it gets charged every year, on a balance that is trying to compound."
+  },
+  {
+    "n": 2,
+    "engine": "openvoice",
+    "vo": "Quick note before we start: this video includes affiliate links in the description. If you use them, Cashflow Compass may earn a commission. It does not change what we cover, but you deserve to know. This video uses an AI-generated narrator and AI-assisted visuals. The script is human-reviewed against the sources in the description. And this is general information, not personalized financial advice."
+  },
+  {
+    "n": 3,
+    "engine": "openvoice",
+    "vo": "An expense ratio is the annual operating cost of a mutual fund or ETF, expressed as a percentage of the fund's average net assets. The SEC says those operating expenses are paid out of fund assets. So most investors do not get a separate bill that says, \"your fund fee was deducted today.\" The fee shows up by reducing the value that remains inside the fund. That is the first reason expense ratios are easy to underestimate. A one percent annual fee does not feel like a one percent tax on a grocery receipt. It feels like slightly less performance, spread across every trading day, inside a statement most people only glance at."
+  },
+  {
+    "n": 4,
+    "engine": "openvoice",
+    "vo": "Now the model. Start with six hundred and fifty dollars a month. Run it for thirty years. Use a seven percent gross annual return as an illustration, not as a forecast. Then subtract the fund expense ratio before compounding. At a 0.04% expense ratio, the ending balance is about seven hundred eighty-seven thousand dollars. At 0.20%, it is about seven hundred sixty-two thousand dollars. At 0.32%, an intermediate modeled fee scenario, it is about seven hundred forty-five thousand dollars. At 0.75%, the ending balance is about six hundred eighty-five thousand dollars. That is the chart in one sentence: the portfolio with the 0.04% fee does not just pay less each year. It keeps more money invested, and that retained money has its own future compounding path. The fee gap compounds too. Here is the part that matters for retention: the original contributions are only two hundred thirty-four thousand dollars. Most of the final balance comes from growth on prior contributions. So when a recurring fee reduces the balance in year five, it also reduces the balance that can grow in year six, year seven, and every year after that. A small annual percentage becomes a large dollar gap when three things are true at the same time: the timeline is long, the balance becomes large, and the fee repeats. Remove any one of those three, and the fee matters less. Keep all three, and the fee becomes one of the few variables an investor can actually measure before the future happens."
+  },
+  {
+    "n": 5,
+    "engine": "openvoice",
+    "vo": "Where does the fee show up? In a fund, operating expenses are taken from fund assets. That means the expense ratio is already reflected in the fund's net asset value and reported returns. You may see a line in the prospectus fee table, but you usually will not see a separate monthly invoice for the fund's operating expense. That is different from an advisory fee or wrap fee. A robo-advisor, for example, may charge an advisory fee on top of the expense ratios of the funds it uses. If an advisory fee is 0.25%, that is not the same category as a fund expense ratio, but it is still a recurring percentage of assets, so it belongs in the same fee audit."
+  },
+  {
+    "n": 6,
+    "engine": "openvoice",
+    "vo": "Fee categories are not all interchangeable. A fund expense ratio, a 12b-1 distribution fee, a brokerage commission, a sales load, and an advisory fee all hit the investor differently. The mechanical question is simple: what percentage of assets, or what dollar charge, repeats over time? Published fee studies often separate asset-weighted averages from simple averages. Those are different averages answering different questions. Asset-weighted means where investor dollars actually sit. Simple average means what the available fund menu looks like if each fund is counted equally. That distinction is why \"average fee\" can be misleading without the label. Many investor dollars have migrated into lower-cost funds. At the same time, plenty of higher-cost funds still exist. The useful move is not to memorize one average. It is to look up the exact fee table for the exact share class and account route being considered. Low fee is also not a complete investment strategy. A lower expense ratio can reduce drag, but it does not make the underlying assets suitable, diversified, tax-efficient, or aligned with a plan. A fund can be cheap and still be the wrong exposure. A fund can be expensive because it is doing something specialized that some investors may deliberately want. This episode is about the fee mechanic, not a command to choose one product."
+  },
+  {
+    "n": 7,
+    "engine": "openvoice",
+    "vo": "So here is a general fee audit many investors use. First, find the fund expense ratio in the prospectus or fund profile. Second, check whether the account has an advisory fee, wrap fee, transaction charge, account fee, or sales load. Third, separate fund cost from advice cost. Fourth, compare like with like: index equity fund to index equity fund, active bond fund to active bond fund, robo-advisor total cost to robo-advisor total cost. For examples, fund profiles, prospectuses, and advisory-fee pages show where to find these disclosures. The useful comparison is the fee label, the account route, and the share class, not the brand name. Those are examples of source types, not recommendations to use any provider. Before the resource links, one more disclosure: this is general education, not personal financial advice. The links in the description are optional research starting points. They are not instructions to open an account, move assets, or buy a fund."
+  },
+  {
+    "n": 8,
+    "engine": "openvoice",
+    "vo": "If you want to see where these disclosures live, the description has three optional research starting points: a low-cost index fund profile, a brokerage with a zero-expense-ratio fund, and a robo-advisor advisory-fee page. They are research starting points only. Nothing here is a recommendation to move assets, buy a named fund, or open any named account. Compare the fee label, the share class, and the account route for yourself."
+  },
+  {
+    "n": 9,
+    "engine": "piper",
+    "vo": "The takeaway is not that 0.04% is magic. The takeaway is that recurring fees compound in reverse. A small percentage can become a large dollar difference when it repeats across a long horizon and a growing balance. If a fee is worth paying, the reason should be visible enough to justify the drag. If it is not visible, the math keeps running anyway. Sources are in the description. Next up, we will use the same chart-and-narrate format to compare target-date funds against a three-fund portfolio, including glide path and fee math."
+  }
+]

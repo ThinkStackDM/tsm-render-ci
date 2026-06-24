@@ -1,0 +1,41 @@
+{
+  "name": "@thiaaaa/chart-and-narrate",
+  "version": "0.1.0",
+  "description": "Compound primitive for the THIAAAAA Cashflow Compass channel: chart-engine adapter (Recharts primary + Chart.js fallback), YMYL linter integration port, idempotency cache, and the six composer-side render-stage gates. Design: THIAAAAA-34 §3; render-stage gates: THIAAAAA-34 comment 815d80cc §(c).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./gates": {
+      "types": "./dist/gates.d.ts",
+      "import": "./dist/gates.js"
+    },
+    "./engines": {
+      "types": "./dist/engines/index.d.ts",
+      "import": "./dist/engines/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.22.3",
+    "typescript": "^5.6.3"
+  },
+  "private": true
+}
