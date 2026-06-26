@@ -1,0 +1,82 @@
+name: cfc-v2-gemini-audio
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/thinkstackdm/thiaaaa-render:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --shm-size=2g --user root
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Cashflow Compass V2 scene WAVs with Gemini
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GEMINI_API_KEY:-}" || { echo "GEMINI_API_KEY is not set"; exit 1; }
+          mkdir -p _audio_out _work
+
+          cat > _work/scenes.json <<'JSON'
+          [
+            {"file":"scene-01.wav","text":"Your employer matched five thousand dollars last year. Then you took a better job two years in. How much of that match did you actually keep? The answer depends on a vesting schedule almost nobody reads. This video is generalized financial mechanics for education only, not personalized financial, tax, or investment advice. This narration is AI generated and reviewed by the Cashflow Compass editorial team."},
+            {"file":"scene-02.wav","text":"Every 401(k) match starts with a formula. A dollar for dollar match up to four percent of salary means that on eighty thousand dollars, three thousand two hundred dollars contributed by you can unlock three thousand two hundred dollars from the employer. A partial match, like fifty cents on the dollar up to six percent, gives two thousand four hundred dollars on the same salary. A tiered formula might match all of the first three percent and half of the next two percent. The formula tells you the ceiling. Vesting tells you whether you own it."},
+            {"file":"scene-03.wav","text":"Vesting is the timeline for legal ownership of employer contributions. Your own contributions are always yours. Employer contributions can be subject to the plan's schedule. In a cliff schedule, you may own zero percent until a date, then one hundred percent after that date. Federal ERISA rules set a maximum three year cliff for this kind of schedule. In a graded schedule, ownership builds gradually. A common six year graded structure is zero percent after year one, twenty percent after year two, forty percent after year three, and so on until one hundred percent. Employers can be more generous, including immediate vesting. The legal source to check is the Summary Plan Description."},
+            {"file":"scene-04.wav","text":"Here is the edge case that catches people who front load. Suppose the plan matches fifty cents on the dollar up to six percent of pay. You earn one hundred twenty thousand dollars, so the full year match potential is three thousand six hundred dollars. If you spread contributions all year, every paycheck can earn a match. If you max out by June, some plans stop matching from July through December because you are no longer contributing. A true up provision fixes that at year end. Without a true up, the lost second half match can be real money. Look in the plan document under employer matching contributions and timing."},
+            {"file":"scene-05.wav","text":"Now run the match and leave math. An employee earns seventy five thousand dollars. The plan matches fifty percent up to six percent of salary, so the maximum employer match is two thousand two hundred fifty dollars per year. Under a six year graded schedule, after year one the vested amount is zero. After year two, the employer has contributed four thousand five hundred dollars, but twenty percent vested means the employee owns nine hundred dollars. Leave at that point and the other three thousand six hundred dollars is forfeited. Bureau of Labor Statistics tenure data shows that younger workers often change jobs before long vesting schedules finish. When comparing offers, the headline match is not the full story. The ownership timeline matters."},
+            {"file":"scene-06.wav","text":"After you leave an employer and confirm the vested balance, there are four common paths. You can leave the money in the old plan if the balance is large enough. You can roll it into a new employer's plan if that plan accepts rollovers. You can do a direct trustee to trustee IRA rollover. Or you can take a cash distribution, which can trigger ordinary income tax and a ten percent early withdrawal penalty if you are under fifty nine and a half. The sixty day indirect rollover rule is strict. If a check is issued to you, the plan withholds twenty percent, and you must redeposit the full pre withholding amount within sixty calendar days to avoid tax treatment."},
+            {"file":"scene-07.wav","text":"The recap is simple. First, know the match formula: how much your employer adds per dollar and the salary percentage cap. Second, know the vesting schedule: what percentage of employer money you own today. Third, know the next vesting inflection point: the cliff date or graded milestone that changes the math. This is still generalized mechanics, not advice about what you personally should do. Your plan terms, taxes, age, account options, and job situation can change the result. Read the Summary Plan Description and consult a qualified professional when the decision is specific to you."},
+            {"file":"scene-08.wav","text":"If you do not have a brokerage or IRA yet, Fidelity is linked in the description. If you have an old 401(k) you have not rolled over, Capitalize is linked as a rollover concierge service. Affiliate disclosure: links in the description may be affiliate links, and we may earn a commission if you open an account through them at no additional cost to you. This is Cashflow Compass: source cited money mechanics, no gurus. This narration is AI generated, and the content is written and reviewed by the Cashflow Compass editorial team."}
+          ]
+          JSON
+
+          jq -c '.[]' _work/scenes.json | while read -r scene; do
+            file=$(printf '%s' "$scene" | jq -r '.file')
+            text=$(printf '%s' "$scene" | jq -r '.text')
+            json=$(jq -n \
+              --arg text "[calm, authoritative, measured, neutral US English financial explainer voice, read exactly as written]\n$text" \
+              '{
+                contents: [{parts: [{text: $text}]}],
+                generationConfig: {
+                  responseModalities: ["AUDIO"],
+                  speechConfig: {
+                    voiceConfig: {
+                      prebuiltVoiceConfig: {
+                        voiceName: "Kore"
+                      }
+                    }
+                  }
+                },
+                model: "gemini-3.1-flash-tts-preview"
+              }')
+            curl -sS "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent" \
+              -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+              -H "Content-Type: application/json" \
+              -X POST \
+              -d "$json" > "_work/${file%.wav}.json"
+            jq -er '.candidates[0].content.parts[0].inlineData.data' "_work/${file%.wav}.json" | base64 --decode > "_work/${file%.wav}.pcm"
+            ffmpeg -y -f s16le -ar 24000 -ac 1 -i "_work/${file%.wav}.pcm" -ar 48000 "_audio_out/$file" >/tmp/ffmpeg.log 2>&1
+            test -s "_audio_out/$file"
+          done
+
+          ls -lh _audio_out/
+
+      - name: Upload scene WAVs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfc-v2-gemini-audio-${{ github.run_id }}
+          path: _audio_out/
+          if-no-files-found: error
+          retention-days: 14
