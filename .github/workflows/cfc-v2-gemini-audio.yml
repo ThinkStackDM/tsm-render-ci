@@ -42,10 +42,7 @@ jobs:
           ]
           JSON
 
-          jq -cr '.[] | @base64' _work/scenes.json | while read -r scene_b64; do
-            scene_json=$(printf '%s' "$scene_b64" | base64 --decode)
-            file=$(printf '%s' "$scene_json" | jq -r '.file')
-            text=$(printf '%s' "$scene_json" | jq -r '.text')
+          jq -r '.[] | [.file, .text] | @tsv' _work/scenes.json | while IFS=$'\t' read -r file text; do
             json=$(jq -n \
               --arg text "[calm, authoritative, measured, neutral US English financial explainer voice, read exactly as written]\n$text" \
               '{
