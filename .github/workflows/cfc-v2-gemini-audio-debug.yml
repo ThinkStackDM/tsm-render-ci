@@ -1,0 +1,80 @@
+name: cfc-v2-gemini-audio-debug
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  debug-one-scene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/thinkstackdm/thiaaaa-render:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --shm-size=2g --user root
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe one Gemini scene with raw logging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GEMINI_API_KEY:-}" || { echo "GEMINI_API_KEY is not set"; exit 1; }
+          mkdir -p _debug_out
+
+          text="Your employer matched five thousand dollars last year. Then you took a better job two years in. How much of that match did you actually keep? The answer depends on a vesting schedule almost nobody reads. This video is generalized financial mechanics for education only, not personalized financial, tax, or investment advice. This narration is AI generated and reviewed by the Cashflow Compass editorial team."
+
+          jq -n \
+            --arg text "[calm, authoritative, measured, neutral US English financial explainer voice, read exactly as written]\n$text" \
+            '{
+              contents: [{parts: [{text: $text}]}],
+              generationConfig: {
+                responseModalities: ["AUDIO"],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: "Kore"
+                    }
+                  }
+                }
+              },
+              model: "gemini-3.1-flash-tts-preview"
+            }' > _debug_out/request.json
+
+          http_code=$(curl -sS \
+            -D _debug_out/response-headers.txt \
+            -o _debug_out/response-body.json \
+            -w '%{http_code}' \
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent" \
+            -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d @_debug_out/request.json)
+
+          printf '%s\n' "$http_code" > _debug_out/http-status.txt
+          python3 -c 'import json, pathlib; body = pathlib.Path("_debug_out/response-body.json").read_text(); print(body[:2000]); pathlib.Path("_debug_out/response-preview.txt").write_text(body[:2000])'
+
+          if [ "$http_code" != "200" ]; then
+            echo "Gemini request failed with HTTP $http_code"
+            exit 1
+          fi
+
+          python3 -c 'import base64,json,pathlib; doc=json.loads(pathlib.Path("_debug_out/response-body.json").read_text()); parts=doc.get("candidates",[{}])[0].get("content",{}).get("parts",[]); audio=next((part.get("inlineData",{}) for part in parts if "inlineData" in part), None); payload=(audio or {}).get("data"); assert payload, "Gemini response missing inlineData payload"; padding="=" * (-len(payload) % 4); decoder=base64.urlsafe_b64decode if any(ch in payload for ch in "-_") else base64.b64decode; pathlib.Path("_debug_out/scene-01.pcm").write_bytes(decoder(payload + padding))'
+          ffmpeg -y -f s16le -ar 24000 -ac 1 -i _debug_out/scene-01.pcm -ar 48000 _debug_out/scene-01.wav >/tmp/ffmpeg.log 2>&1
+          test -s _debug_out/scene-01.wav
+
+      - name: Upload Gemini debug artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfc-v2-gemini-audio-debug-${{ github.run_id }}
+          path: _debug_out/
+          if-no-files-found: error
+          retention-days: 14
