@@ -42,9 +42,10 @@ jobs:
           ]
           JSON
 
-          jq -c '.[]' _work/scenes.json | while read -r scene; do
-            file=$(printf '%s' "$scene" | jq -r '.file')
-            text=$(printf '%s' "$scene" | jq -r '.text')
+          jq -cr '.[] | @base64' _work/scenes.json | while read -r scene_b64; do
+            scene_json=$(printf '%s' "$scene_b64" | base64 --decode)
+            file=$(printf '%s' "$scene_json" | jq -r '.file')
+            text=$(printf '%s' "$scene_json" | jq -r '.text')
             json=$(jq -n \
               --arg text "[calm, authoritative, measured, neutral US English financial explainer voice, read exactly as written]\n$text" \
               '{
@@ -66,6 +67,11 @@ jobs:
               -H "Content-Type: application/json" \
               -X POST \
               -d "$json" > "_work/${file%.wav}.json"
+            jq -e '.error | not' "_work/${file%.wav}.json" >/dev/null || {
+              echo "Gemini API error for $file"
+              cat "_work/${file%.wav}.json"
+              exit 1
+            }
             jq -er '.candidates[0].content.parts[0].inlineData.data' "_work/${file%.wav}.json" | base64 --decode > "_work/${file%.wav}.pcm"
             ffmpeg -y -f s16le -ar 24000 -ac 1 -i "_work/${file%.wav}.pcm" -ar 48000 "_audio_out/$file" >/tmp/ffmpeg.log 2>&1
             test -s "_audio_out/$file"
