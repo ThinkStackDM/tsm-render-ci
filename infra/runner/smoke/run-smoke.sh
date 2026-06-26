@@ -10,6 +10,18 @@ PY="${VENV:-/opt/venv}/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3)"
 [ -n "$PY" ] || { echo "FAIL: python not found"; exit 1; }
 
+run_stage() {
+  local label="$1"
+  shift
+  local start end elapsed
+  start="$(date +%s)"
+  echo "== ${label} =="
+  "$@"
+  end="$(date +%s)"
+  elapsed="$((end - start))"
+  echo "== ${label} complete (${elapsed}s) =="
+}
+
 if [ "${1:-}" != "" ]; then
   export RUNNER_SCRIPT_TEXT="$(tr '\n' ' ' < "$1")"
 fi
@@ -21,10 +33,10 @@ node -e "console.log('puppeteer', require('puppeteer/package.json').version)"
 "$PY" -c "import whisperx; print('whisperx ok')"
 echo
 
-echo "== 1/3 capture =="; "$HERE/capture.sh" "$OUT"
-echo "== 2/3 openvoice =="; PYTHONUNBUFFERED=1 "$PY" "$HERE/tts.py" "$OUT"
-echo "== 3/3 whisperx =="; PYTHONUNBUFFERED=1 "$PY" "$HERE/whisperx_manifest.py" "$OUT/openvoice_clip.wav" "$OUT/whisperx_manifest.json"
-echo "== 4/4 assemble =="; "$HERE/assemble-render.sh" "$OUT"
+run_stage "1/4 capture" "$HERE/capture.sh" "$OUT"
+run_stage "2/4 openvoice" env PYTHONUNBUFFERED=1 "$PY" "$HERE/tts.py" "$OUT"
+run_stage "3/4 whisperx" env PYTHONUNBUFFERED=1 "$PY" "$HERE/whisperx_manifest.py" "$OUT/openvoice_clip.wav" "$OUT/whisperx_manifest.json"
+run_stage "4/4 assemble" "$HERE/assemble-render.sh" "$OUT"
 
 echo
 echo "== artifacts =="; ls -la "$OUT"
