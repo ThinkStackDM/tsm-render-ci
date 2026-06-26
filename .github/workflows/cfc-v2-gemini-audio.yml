@@ -72,7 +72,30 @@ jobs:
               cat "_work/${file%.wav}.json"
               exit 1
             }
-            jq -er '.candidates[0].content.parts[0].inlineData.data' "_work/${file%.wav}.json" | base64 --decode > "_work/${file%.wav}.pcm"
+            python3 - <<'PY' "_work/${file%.wav}.json" "_work/${file%.wav}.pcm"
+import base64
+import json
+import pathlib
+import sys
+
+src = pathlib.Path(sys.argv[1])
+dst = pathlib.Path(sys.argv[2])
+doc = json.loads(src.read_text())
+parts = doc.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+audio = next((part.get("inlineData", {}) for part in parts if "inlineData" in part), None)
+if not audio or "data" not in audio:
+    print("Gemini response missing inlineData payload", file=sys.stderr)
+    print(json.dumps(doc)[:2000], file=sys.stderr)
+    raise SystemExit(1)
+
+payload = audio["data"]
+padding = "=" * (-len(payload) % 4)
+try:
+    pcm = base64.b64decode(payload + padding, validate=False)
+except Exception:
+    pcm = base64.urlsafe_b64decode(payload + padding)
+dst.write_bytes(pcm)
+PY
             ffmpeg -y -f s16le -ar 24000 -ac 1 -i "_work/${file%.wav}.pcm" -ar 48000 "_audio_out/$file" >/tmp/ffmpeg.log 2>&1
             test -s "_audio_out/$file"
           done
