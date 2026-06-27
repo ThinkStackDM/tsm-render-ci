@@ -2,7 +2,7 @@ name: cfc-v3-audio
 
 # Generates per-beat TTS WAVs for Cashflow Compass video #3 (TSM-1676).
 # Beats 2-8: OpenVoice v2 (MIT) via the thiaaaa-render container.
-# Beats 1, 9: Piper en_US-ryan-high (CC-BY-4.0), installed at runtime.
+# All beats: OpenVoice v2 (Piper dropped 2026-06-27 per operator A/B verdict).
 # Outputs: beat-1.wav .. beat-9.wav uploaded as artifact cfc-v3-audio-<run_id>.
 
 on:
