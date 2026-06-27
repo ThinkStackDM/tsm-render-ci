@@ -19,10 +19,14 @@ jobs:
       options: --shm-size=2g --user root
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: gemini-3.1-flash-tts-preview
+      VOICE_NAME: Kore
+      SCENE_PAUSE_SECONDS: "30"
+      MAX_RATE_RETRIES: "5"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate Cashflow Compass V2 scene WAVs with Gemini
+      - name: Generate Cashflow Compass V2 scene WAVs with Gemini (paced + quota-aware)
         shell: bash
         run: |
           set -euo pipefail
@@ -42,38 +46,87 @@ jobs:
           ]
           JSON
 
-          jq -r '.[] | [.file, .text] | @tsv' _work/scenes.json | while IFS=$'\t' read -r file text; do
+          # Pacing rationale (TSM-3683): Gemini free tier = 10 requests/day, ~2/min.
+          # 8 scenes fit the daily cap with margin, but ONLY if calls are paced under
+          # the per-minute rate. We also distinguish PerDay 429 (fatal, give up — the
+          # daily cap will not recover in-job) from PerMinute 429 (back off + retry).
+          decode_scene() {
+            local base="$1"
+            python3 -c 'import base64,json,pathlib,sys; doc=json.loads(pathlib.Path(sys.argv[1]).read_text()); parts=doc.get("candidates",[{}])[0].get("content",{}).get("parts",[]); audio=next((p.get("inlineData",{}) for p in parts if "inlineData" in p), None); payload=(audio or {}).get("data"); assert payload, "Gemini response missing inlineData payload"; pad="="*(-len(payload)%4); dec=base64.urlsafe_b64decode if any(c in payload for c in "-_") else base64.b64decode; pathlib.Path(sys.argv[2]).write_bytes(dec(payload+pad))' "_work/${base}.json" "_work/${base}.pcm"
+          }
+
+          gen_scene() {
+            local file="$1" text="$2"
+            local base="${file%.wav}"
+            local json
             json=$(jq -n \
               --arg text "[calm, authoritative, measured, neutral US English financial explainer voice, read exactly as written]\n$text" \
-              '{
-                contents: [{parts: [{text: $text}]}],
-                generationConfig: {
-                  responseModalities: ["AUDIO"],
-                  speechConfig: {
-                    voiceConfig: {
-                      prebuiltVoiceConfig: {
-                        voiceName: "Kore"
-                      }
-                    }
-                  }
-                },
-                model: "gemini-3.1-flash-tts-preview"
-              }')
-            curl -sS "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent" \
-              -H "x-goog-api-key: ${GEMINI_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -X POST \
-              -d "$json" > "_work/${file%.wav}.json"
-            jq -e '.error | not' "_work/${file%.wav}.json" >/dev/null || {
-              echo "Gemini API error for $file"
-              cat "_work/${file%.wav}.json"
-              exit 1
-            }
-            python3 -c 'import base64,json,pathlib,sys; doc=json.loads(pathlib.Path(sys.argv[1]).read_text()); parts=doc.get("candidates",[{}])[0].get("content",{}).get("parts",[]); audio=next((part.get("inlineData",{}) for part in parts if "inlineData" in part), None); payload=(audio or {}).get("data"); assert payload, "Gemini response missing inlineData payload"; padding="=" * (-len(payload) % 4); decoder=base64.urlsafe_b64decode if any(ch in payload for ch in "-_") else base64.b64decode; pathlib.Path(sys.argv[2]).write_bytes(decoder(payload + padding))' "_work/${file%.wav}.json" "_work/${file%.wav}.pcm"
-            ffmpeg -y -f s16le -ar 24000 -ac 1 -i "_work/${file%.wav}.pcm" -ar 48000 "_audio_out/$file" >/tmp/ffmpeg.log 2>&1
+              --arg model "$GEMINI_MODEL" \
+              --arg voice "$VOICE_NAME" \
+              '{contents:[{parts:[{text:$text}]}],generationConfig:{responseModalities:["AUDIO"],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName:$voice}}}},model:$model}')
+            local attempt=1 code msg quota wait
+            while :; do
+              code=$(curl -sS -o "_work/${base}.json" -w '%{http_code}' \
+                "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent" \
+                -H "x-goog-api-key: ${GEMINI_API_KEY}" \
+                -H "Content-Type: application/json" \
+                -X POST -d "$json" || echo "000")
+              if [ "$code" = "200" ] && jq -e '.candidates[0].content.parts[]?.inlineData.data' "_work/${base}.json" >/dev/null 2>&1; then
+                echo "  $file: HTTP 200, audio payload present"
+                return 0
+              fi
+              msg=$(jq -r '.error.message // "no error.message in body"' "_work/${base}.json" 2>/dev/null || echo "non-JSON body")
+              echo "  $file: attempt ${attempt} failed (HTTP ${code}) -> ${msg}"
+              if [ "$code" = "429" ]; then
+                quota=$(jq -r '[.error.details[]?|.violations[]?|.quotaId] | join(",")' "_work/${base}.json" 2>/dev/null || echo "")
+                if printf '%s %s' "$quota" "$msg" | grep -qiE 'PerDay|per day'; then
+                  echo "  $file: FATAL — daily free-tier quota exhausted (will not recover in-job). quotaId=${quota}"
+                  echo "  Next window: rerun after Gemini free-tier daily reset (00:00 America/Los_Angeles)."
+                  return 2
+                fi
+                wait=$(jq -r '[.error.details[]?|select((."@type"//"")|test("RetryInfo"))|.retryDelay] | .[0] // "35s"' "_work/${base}.json" 2>/dev/null | tr -dc '0-9')
+                wait="${wait:-35}"; [ "$wait" -lt 35 ] && wait=35
+                echo "  $file: per-minute rate 429 — backing off ${wait}s (rate retry ${attempt}/${MAX_RATE_RETRIES})"
+                sleep "$wait"
+              else
+                echo "  $file: transient/non-429 error — retrying in 10s"
+                sleep 10
+              fi
+              attempt=$((attempt+1))
+              if [ "$attempt" -gt "${MAX_RATE_RETRIES}" ]; then
+                echo "  $file: exhausted ${MAX_RATE_RETRIES} retries"; return 1
+              fi
+            done
+          }
+
+          mapfile -t ROWS < <(jq -r '.[] | [.file, .text] | @tsv' _work/scenes.json)
+          idx=0
+          for row in "${ROWS[@]}"; do
+            file="${row%%$'\t'*}"; text="${row#*$'\t'}"
+            if [ "$idx" -gt 0 ]; then
+              echo "Pacing ${SCENE_PAUSE_SECONDS}s before $file (respect ~2/min rate)"
+              sleep "${SCENE_PAUSE_SECONDS}"
+            fi
+            idx=$((idx+1))
+            echo "=== $file ==="
+            set +e; gen_scene "$file" "$text"; rc=$?; set -e
+            if [ "$rc" -ne 0 ]; then
+              echo "Stopping: $file did not produce audio (rc=$rc)."
+              exit "$rc"
+            fi
+            base="${file%.wav}"
+            decode_scene "$base"
+            ffmpeg -y -f s16le -ar 24000 -ac 1 -i "_work/${base}.pcm" -ar 48000 "_audio_out/$file" >/tmp/ffmpeg.log 2>&1
             test -s "_audio_out/$file"
+            echo "OK  $file ($(stat -c%s "_audio_out/$file") bytes)"
           done
 
+          echo "=== Building concatenated narration track ==="
+          : > _work/concat.txt
+          for f in $(ls _audio_out/scene-*.wav | sort); do echo "file '$PWD/$f'" >> _work/concat.txt; done
+          ffmpeg -y -f concat -safe 0 -i _work/concat.txt -ar 48000 -ac 1 _audio_out/cfc-v2-narration-full.wav >/tmp/ffmpeg-concat.log 2>&1
+          echo "Full narration: $(stat -c%s _audio_out/cfc-v2-narration-full.wav) bytes"
+          ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 _audio_out/cfc-v2-narration-full.wav || true
           ls -lh _audio_out/
 
       - name: Upload scene WAVs
