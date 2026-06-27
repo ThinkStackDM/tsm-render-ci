@@ -34,7 +34,14 @@ node -e "console.log('puppeteer', require('puppeteer/package.json').version)"
 echo
 
 run_stage "1/4 capture" "$HERE/capture.sh" "$OUT"
-run_stage "2/4 openvoice" env PYTHONUNBUFFERED=1 "$PY" "$HERE/tts.py" "$OUT"
+if [ -n "${RUNNER_AUDIO_URL:-}" ]; then
+  echo "== 2/4 external-audio (Gemini, provided WAV) =="
+  curl -fsSL "$RUNNER_AUDIO_URL" -o "$OUT/openvoice_clip.wav"
+  test -s "$OUT/openvoice_clip.wav"
+  echo "== 2/4 external-audio complete =="
+else
+  run_stage "2/4 openvoice" env PYTHONUNBUFFERED=1 "$PY" "$HERE/tts.py" "$OUT"
+fi
 run_stage "3/4 whisperx" env PYTHONUNBUFFERED=1 "$PY" "$HERE/whisperx_manifest.py" "$OUT/openvoice_clip.wav" "$OUT/whisperx_manifest.json"
 run_stage "4/4 assemble" "$HERE/assemble-render.sh" "$OUT"
 
