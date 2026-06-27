@@ -1,7 +1,7 @@
 [
   {
     "n": 1,
-    "engine": "piper",
+    "engine": "openvoice",
     "vo": "Same money in. Same gross return. One fund charges 0.04%. Another fee scenario charges 0.75%. Over thirty years, in this model, the gap is about one hundred and two thousand dollars. Not because the fee looks big. Because it gets charged every year, on a balance that is trying to compound."
   },
   {
@@ -41,7 +41,7 @@
   },
   {
     "n": 9,
-    "engine": "piper",
+    "engine": "openvoice",
     "vo": "The takeaway is not that 0.04% is magic. The takeaway is that recurring fees compound in reverse. A small percentage can become a large dollar difference when it repeats across a long horizon and a growing balance. If a fee is worth paying, the reason should be visible enough to justify the drag. If it is not visible, the math keeps running anyway. Sources are in the description. Next up, we will use the same chart-and-narrate format to compare target-date funds against a three-fund portfolio, including glide path and fee math."
   }
 ]
