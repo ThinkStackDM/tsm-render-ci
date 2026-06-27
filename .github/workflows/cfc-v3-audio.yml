@@ -26,28 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Piper en_US-ryan-high
-        shell: bash
-        run: |
-          set -euo pipefail
-          PIPER_VER="2023.11.14-2"
-          cd /tmp
-          curl -fsSL \
-            "https://github.com/rhasspy/piper/releases/download/${PIPER_VER}/piper_linux_x86_64.tar.gz" \
-            | tar xz
-          mv piper /opt/piper-bin
-          mkdir -p /opt/piper
-          BASE="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/ryan/high"
-          curl -fsSL "${BASE}/en_US-ryan-high.onnx"      -o /opt/piper/en_US-ryan-high.onnx
-          curl -fsSL "${BASE}/en_US-ryan-high.onnx.json" -o /opt/piper/en_US-ryan-high.onnx.json
-          echo "piper $(/opt/piper-bin/piper --version 2>&1 || true) installed"
-
       - name: Generate per-beat WAVs
         shell: bash
         env:
           OPENVOICE_HOME: /opt/openvoice
-          PIPER_BIN: /opt/piper-bin/piper
-          PIPER_MODEL: /opt/piper/en_US-ryan-high.onnx
           OMP_NUM_THREADS: "4"
           OPENBLAS_NUM_THREADS: "4"
         run: |
