@@ -19,6 +19,10 @@ on:
         description: Artifact bundle name
         required: true
         default: hosted-render
+      audio_url:
+        description: Optional URL to a pre-generated voiceover WAV (Gemini). If set, OpenVoice TTS is skipped.
+        required: false
+        default: ""
   workflow_call:
     inputs:
       title:
@@ -35,6 +39,10 @@ on:
         required: false
         type: string
         default: hosted-render
+      audio_url:
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -61,6 +69,7 @@ jobs:
           PLAYWRIGHT_BROWSERS_PATH: /opt/ms-playwright
           SMOKE_OUT: ${{ github.workspace }}/_render_out
           RUNNER_SCRIPT_TEXT: ${{ inputs.script }}
+          RUNNER_AUDIO_URL: ${{ inputs.audio_url }}
           CAPTURE_TITLE: ${{ inputs.title }}
           CAPTURE_SUBTITLE: ${{ inputs.subtitle }}
           OMP_NUM_THREADS: "4"
