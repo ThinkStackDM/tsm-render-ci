@@ -80,6 +80,22 @@ jobs:
           for i in $(seq 1 15); do xdpyinfo -display :99 >/dev/null 2>&1 && break; sleep 1; done
           chmod +x infra/runner/smoke/*.sh
           infra/runner/smoke/run-smoke.sh
+      - name: Shared render-gate (fail-closed; TSM-6171)
+        shell: bash
+        env:
+          SMOKE_OUT: ${{ github.workspace }}/_render_out
+        run: |
+          set -euo pipefail
+          # Portfolio invariant (TSM-6169 audit): no produced master may be
+          # treated as reviewable/publishable until it has passed the shared
+          # rejection-QA baseline. The canonical internal gate cannot run in this
+          # public, tooling-only repo (it would leak internal QA) and needs a full
+          # deck source pack this lane does not produce -- so this is the allowed
+          # equivalent shared-gate step. It enforces the master-level shared
+          # invariants (1080p/30fps, muxed narration, WhisperX >=0.85 floor,
+          # master covers narration) fail-closed and records that the deck
+          # source-pack gates are deferred to run-rejection-qa-gates.sh.
+          python3 infra/runner/qa/shared-render-gate.py "$SMOKE_OUT"
       - name: Upload render artifacts
         if: always()
         uses: actions/upload-artifact@v4
